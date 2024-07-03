@@ -1,0 +1,12 @@
+{
+    "name": "@andre-hctulc-/njses-http",
+    "version": "0.0.1",
+    "description": "",
+    "main": "index.js",
+    "scripts": {
+        "build": "npm run tc && tsc",
+        "tc": "tsc --noEmit"
+    },
+    "author": "André Thomas",
+    "license": "ISC"
+}
