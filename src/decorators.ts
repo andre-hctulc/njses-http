@@ -8,6 +8,7 @@ import type {
     HTTPSender,
     HTTPSession,
     HTTPNormalizedRequest,
+    HTTPMatcher,
 } from "./types";
 
 /*
@@ -16,6 +17,7 @@ Extend NJSES `ServiceShadow` with Lambda specific fields
 declare module "../../njses" {
     interface CustomShadow {
         http_cors: HTTPCORSOptions;
+        http_options: HttpServiceOptions;
     }
 
     interface CustomShadowProp {
@@ -28,12 +30,21 @@ declare module "../../njses" {
     }
 }
 
+export interface HttpServiceOptions {
+    priority?: number;
+    match?: HTTPMatcher;
+}
 /**
  * Assigns the HTTP role to a service
  * @class_decorator
  */
-export function HTTP(service: ServiceCtr) {
-    return Role(HTTP_ROLE.SERVICE)(service);
+export function HTTP(options: HttpServiceOptions = {}) {
+    return function (service: ServiceCtr) {
+        Shadow.update(service, (shadow) => {
+            shadow.http_options = options;
+        });
+        return Role(HTTP_ROLE.SERVICE)(service);
+    };
 }
 
 /**
@@ -210,6 +221,7 @@ export function ContextProvider<C extends HTTPRequestContext>(
 }
 
 /**
+ * The decorated method should throw an Error on failure
  * @method_decorator
  */
 export function Authenticate<S extends HTTPSession>(

@@ -8,5 +8,12 @@
         "tc": "tsc --noEmit"
     },
     "author": "André Thomas",
-    "license": "ISC"
+    "license": "ISC",
+    "dependencies": {
+        "glob": "^10.4.2",
+        "micromatch": "^4.0.7"
+    },
+    "devDependencies": {
+        "@types/micromatch": "^4.0.9"
+    }
 }
