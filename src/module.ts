@@ -1,4 +1,4 @@
-import { Init, Module, ServiceCtr, ServiceInstance, ServiceRegistery } from "../../njses";
+import { Init, Module, ServiceInstance, ServiceRegistery } from "../../njses";
 import { Shadow, ParamShadow, FieldShadow } from "../../njses/shadow";
 import { HTTP_FIELD, HTTP_ROLE } from "./const";
 import { HTTPError } from "./errors";
@@ -12,6 +12,7 @@ import type {
     HTTPNormalizedRequest,
     HTTPCORSOptions,
     HTTPMatcher,
+    HTTPNormalizedResponse,
 } from "./types";
 import micromatch from "micromatch";
 
@@ -24,6 +25,7 @@ type AssigneeCacheEntry = {
 @Module({ name: "$$http_module" })
 export class HTTPModule {
     private _httpServices: AssigneeCacheEntry[] = [];
+    private _sender: { service: ServiceInstance; method: string } | undefined;
 
     @Init
     private async _collectHttpServices() {
@@ -33,6 +35,15 @@ export class HTTPModule {
                 const shadow = Shadow.get(service, true);
                 if (!service) throw new Error("Service not found");
                 if (!shadow) throw new Error("Service shadow not found");
+                if (!this._sender) {
+                    const senderMethod = Shadow.getMethod(service, HTTP_FIELD.SENDER);
+                    if (senderMethod) {
+                        this._sender = {
+                            service,
+                            method: senderMethod,
+                        };
+                    }
+                }
                 return {
                     service,
                     matcher: shadow.http_options?.match || null,
@@ -62,27 +73,30 @@ export class HTTPModule {
         try {
             return await this._incoming(handlerService, request);
         } catch (err) {
-            if (err instanceof HTTPError) return err.response;
+            if (err instanceof HTTPError) return this.send(this._emptyRequest(request), err.response);
             else throw err;
         }
+    }
+
+    private _emptyRequest(request: HTTPRequest): HTTPNormalizedRequest {
+        return {
+            originalRequest: request,
+            body: undefined,
+            searchParams: new URLSearchParams(),
+            headers: new Headers(),
+            cookies: {},
+            method: "",
+            path: "",
+        };
     }
 
     private async _incoming(handlerService: ServiceInstance, request: HTTPRequest): Promise<HTTPResponse> {
         // -- parse request and get sender
 
         // inital request
-        let normalizedRequest: HTTPNormalizedRequest = {
-            originalRequest: request,
-            body: undefined,
-            searchParams: new URLSearchParams(),
-            headers: new Headers(),
-            cookies: {},
-            method: "GET",
-            path: "",
-        };
+        let normalizedRequest: HTTPNormalizedRequest = this._emptyRequest(request);
         // The path should get set eventually by a http service that has no matcher
         let path: string | undefined;
-        let sender: { service: ServiceCtr; method: string } | undefined;
         const usedAssignees: AssigneeCacheEntry[] = [];
 
         for (const assignee of this._httpServices) {
@@ -90,12 +104,6 @@ export class HTTPModule {
             if (path !== undefined && !this.matches(path, assignee.matcher)) continue;
 
             usedAssignees.push(assignee);
-
-            // find sender once
-            if (!sender) {
-                const senderMethodName = Shadow.getMethod(assignee.service, HTTP_FIELD.SENDER);
-                if (senderMethodName) sender = { service: assignee.service, method: senderMethodName };
-            }
 
             for (const method of Shadow.getMethods(assignee.service, HTTP_FIELD.REQUEST_PARSER)) {
                 const newReq = ServiceRegistery.invoke<HTTPRequestParser>(assignee.service, method, [
@@ -109,8 +117,6 @@ export class HTTPModule {
                 }
             }
         }
-
-        if (!sender) throw new Error("No sender found");
 
         // -- get inital response
 
@@ -176,12 +182,15 @@ export class HTTPModule {
 
         // -- create sendable response
 
-        const response = await ServiceRegistery.invoke<HTTPSender>(sender.service, sender.method, [
-            normalizedRequest,
-            normalizedResponse,
-        ]);
+        return await this.send(normalizedRequest, normalizedResponse);
+    }
 
-        return response;
+    async send(request: HTTPNormalizedRequest, response: HTTPNormalizedResponse) {
+        if (!this._sender) throw new Error("No sender found");
+        return await ServiceRegistery.invoke<HTTPSender>(this._sender.service, this._sender.method, [
+            request,
+            response,
+        ]);
     }
 
     private _getParam(request: HTTPNormalizedRequest, type: ParamShadow["http_param_type"]) {
