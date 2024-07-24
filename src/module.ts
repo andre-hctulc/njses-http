@@ -1,5 +1,5 @@
 import { Init, Module, ServiceInstance, ServiceRegistery } from "../../njses";
-import { Shadow, ParamShadow, FieldShadow } from "../../njses/shadow";
+import { Shadow, ParamShadow, FieldShadow } from "../../njses/src/shadow";
 import { HTTP_FIELD, HTTP_ROLE } from "./const";
 import { HTTPError } from "./errors";
 import type {
@@ -11,14 +11,14 @@ import type {
     HTTPSender,
     HTTPNormalizedRequest,
     HTTPCORSOptions,
-    HTTPMatcher,
+    HTTPMatcherCheck,
     HTTPNormalizedResponse,
 } from "./types";
 import micromatch from "micromatch";
 
 type AssigneeCacheEntry = {
     service: ServiceInstance;
-    matcher: HTTPMatcher | null;
+    matcher: HTTPMatcherCheck | null;
     priotity?: number;
 };
 
@@ -46,7 +46,7 @@ export class HTTPModule {
                 }
                 return {
                     service,
-                    matcher: shadow.http_options?.match || null,
+                    matcher: shadow.http_matcher || null,
                     priotity: shadow.http_options?.priority,
                 };
             })
@@ -59,23 +59,15 @@ export class HTTPModule {
     }
 
     getAssignees(path: string): AssigneeCacheEntry[] {
-        return this._httpServices.filter((a) => !a.matcher || this.matches(path, a.matcher));
+        return this._httpServices.filter((a) => this.matches(path, a.matcher));
     }
 
-    matches(path: string, matcher: HTTPMatcher | null | undefined): boolean {
+    matches(path: string, matcher: HTTPMatcherCheck | null | undefined): boolean {
         if (matcher == null) return true;
-        if (Array.isArray(matcher)) return matcher.some((m) => this.matches(path, m));
-        if (typeof matcher === "string") return micromatch.isMatch(path, matcher);
+        else if (Array.isArray(matcher)) return matcher.some((m) => this.matches(path, m));
+        else if (typeof matcher === "string") return micromatch.isMatch(path, matcher);
+        else if (typeof matcher === "function") return matcher(path);
         else return matcher.test(path);
-    }
-
-    async incoming(handlerService: ServiceInstance, request: HTTPRequest): Promise<HTTPResponse> {
-        try {
-            return await this._incoming(handlerService, request);
-        } catch (err) {
-            if (err instanceof HTTPError) return this.send(this._emptyRequest(request), err.response);
-            else throw err;
-        }
     }
 
     private _emptyRequest(request: HTTPRequest): HTTPNormalizedRequest {
@@ -90,6 +82,18 @@ export class HTTPModule {
         };
     }
 
+    /**
+     * Creates a response and sends it
+     */
+    async incoming(handlerService: ServiceInstance, request: HTTPRequest): Promise<HTTPResponse> {
+        try {
+            return await this._incoming(handlerService, request);
+        } catch (err) {
+            if (err instanceof HTTPError) return this.send(this._emptyRequest(request), err.response);
+            else throw err;
+        }
+    }
+
     private async _incoming(handlerService: ServiceInstance, request: HTTPRequest): Promise<HTTPResponse> {
         // -- parse request and get sender
 
@@ -101,11 +105,16 @@ export class HTTPModule {
 
         for (const assignee of this._httpServices) {
             // continue if path does not match
-            if (path !== undefined && !this.matches(path, assignee.matcher)) continue;
+            if (path != null && !this.matches(path, assignee.matcher)) continue;
 
             usedAssignees.push(assignee);
 
             for (const method of Shadow.getMethods(assignee.service, HTTP_FIELD.REQUEST_PARSER)) {
+                const p = Shadow.getField(assignee, method);
+
+                // continue if path does not match
+                if (path != null && !this.matches(normalizedRequest.path, p?.http_matcher)) continue;
+
                 const newReq = ServiceRegistery.invoke<HTTPRequestParser>(assignee.service, method, [
                     normalizedRequest,
                 ]);
@@ -150,6 +159,9 @@ export class HTTPModule {
 
         for (const httpService of usedAssignees) {
             for (const ref of Shadow.getMethods(httpService.service, HTTP_FIELD.RESPONSE_REFINER)) {
+                const p = Shadow.getField(httpService, ref);
+                if (!this.matches(normalizedRequest.path, p?.http_matcher)) continue;
+
                 normalizedResponse = await ServiceRegistery.invoke<HTTPResponseRefiner>(
                     httpService.service,
                     ref,
@@ -212,6 +224,9 @@ export class HTTPModule {
         }
     }
 
+    /**
+     * @param httpServices The services to collect the CORS options from. These should match the request path already!
+     */
     private async _collectCorsOptions(
         httpServices: AssigneeCacheEntry[],
         request: HTTPNormalizedRequest
@@ -229,10 +244,18 @@ export class HTTPModule {
         for (const httpService of httpServices) {
             const shadow = Shadow.get(httpService.service, true);
             if (shadow.http_cors) cors = mergeCors(cors || {}, shadow.http_cors);
-            for (const f of Shadow.getProps(httpService.service, HTTP_FIELD.CORS)) {
+
+            for (const corsField of Shadow.getProps(httpService.service, HTTP_FIELD.CORS)) {
+                const field = Shadow.getField(httpService, corsField);
+
+                // apply matcher
+                if (!this.matches(request.path, field?.http_matcher)) continue;
+
                 cors = mergeCors(
                     cors || {},
-                    (await ServiceRegistery.resolve<HTTPCORSOptions>(httpService.service, f, [request])) || {}
+                    (await ServiceRegistery.resolve<HTTPCORSOptions>(httpService.service, corsField, [
+                        request,
+                    ])) || {}
                 );
             }
         }

@@ -11,78 +11,78 @@ export class HTTPError extends Error {
 }
 
 export class HTTPUnauthorizedError extends HTTPError {
-    constructor() {
+    constructor(responseMessage?: string, cause?: unknown) {
         super(
             {
                 status: 401,
-                body: "Unauthorized",
+                body: responseMessage ?? "Unauthorized",
             },
-            undefined,
+            cause,
             "Unauthorized"
         );
     }
 }
 
 export class HTTPForbiddenError extends HTTPError {
-    constructor() {
+    constructor(responseMessage?: string, cause?: unknown) {
         super(
             {
                 status: 403,
-                body: "Forbidden",
+                body: responseMessage ?? "Forbidden",
             },
-            undefined,
+            cause,
             "Forbidden"
         );
     }
 }
 
 export class HTTPNotFoundError extends HTTPError {
-    constructor() {
+    constructor(responseMessage?: string, cause?: unknown) {
         super(
             {
                 status: 404,
-                body: "Not Found",
+                body: responseMessage ?? "Not Found",
             },
-            undefined,
+            cause,
             "Not Found"
         );
     }
 }
 
 export class HTTPBadRequestError extends HTTPError {
-    constructor() {
+    constructor(responseMessage?: string, cause?: unknown) {
         super(
             {
                 status: 400,
-                body: "Bad Request",
+                body: responseMessage ?? "Bad Request",
             },
-            undefined,
+            cause,
             "Bad Request"
         );
     }
 }
 
 export class HTTPConflictError extends HTTPError {
-    constructor() {
+    constructor(responseMessage?: string, cause?: unknown) {
         super(
             {
                 status: 409,
-                body: "Conflict",
+                body: responseMessage ?? "Conflict",
             },
-            undefined,
+            cause,
             "Conflict"
         );
     }
 }
 
 export class HTTPInternalServerError extends HTTPError {
-    constructor() {
+    constructor(responseMessage?: string, cause?: unknown) {
         super(
             {
                 status: 500,
-                body: "Internal Server Error",
+                body: responseMessage ?? "Internal Server Error",
             },
-            undefined,
+            cause,
             "Internal Server Error"
         );
     }

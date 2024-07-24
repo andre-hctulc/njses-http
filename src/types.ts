@@ -1,3 +1,28 @@
+/*
+Extend NJSES `ServiceShadow` with Lambda specific fields 
+*/
+declare module "../../njses" {
+    interface CustomShadow {
+        http_cors: HTTPCORSOptions;
+        http_options: HttpServiceOptions;
+        http_matcher: HTTPMatcherCheck;
+    }
+
+    interface CustomFieldShadow {
+        http_method: string;
+        http_path: string;
+        http_matcher: HTTPMatcherCheck;
+    }
+
+    interface CustomShadowParam {
+        http_param_type: "body" | "req" | "search_params" | "headers" | "context" | "session" | "cookie";
+    }
+}
+
+export interface HttpServiceOptions {
+    priority?: number;
+}
+
 /* 
 ev: APIGatewayProxyEvent, ctx: Context, rctx: ProtectedReqCtx 
 */
@@ -78,4 +103,8 @@ export type HTTPSender = (request: HTTPNormalizedRequest, response: HTTPNormaliz
 
 export type HTTPCORSResolver = (request: HTTPNormalizedRequest) => HTTPCORSOptions | undefined;
 
-export type HTTPMatcher = string | RegExp | (string | RegExp)[];
+export type HTTPMatcherCheck =
+    | string
+    | RegExp
+    | ((path: string) => boolean)
+    | (string | RegExp | ((path: string) => boolean))[];
