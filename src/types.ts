@@ -90,18 +90,6 @@ export type HTTPNormalizedResponse = {
     cookies?: HTTPSetCookie[];
 };
 
-export type HTTPRequestParser = (request: HTTPNormalizedRequest) => Partial<HTTPNormalizedRequest> | void;
-
-export type HTTPHandler = (request: HTTPNormalizedRequest) => HTTPNormalizedResponse;
-
-export type HTTPResponseRefiner = (
-    request: HTTPNormalizedRequest,
-    response: HTTPNormalizedResponse
-) => HTTPNormalizedResponse;
-
-export type HTTPSender = (request: HTTPNormalizedRequest, response: HTTPNormalizedResponse) => HTTPResponse;
-
-export type HTTPCORSResolver = (request: HTTPNormalizedRequest) => HTTPCORSOptions | undefined;
 
 export type HTTPMatcherCheck =
     | string

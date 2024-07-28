@@ -1,4 +1,5 @@
 export enum HTTP_FIELD {
+    REQUEST_RECEIVE = "$$http_request_parser",
     REQUEST_PARSER = "$$http_request_parser",
     SENDER = "$$http_sender",
     RESPONSE_REFINER = "$$http_response_refinder",

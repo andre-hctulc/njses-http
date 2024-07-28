@@ -3,13 +3,12 @@ import { HTTP_FIELD, HTTP_ROLE } from "./const";
 import type {
     HTTPCORSOptions,
     HTTPRequestContext,
-    HTTPRequestParser,
-    HTTPResponseRefiner,
-    HTTPSender,
     HTTPSession,
     HTTPNormalizedRequest,
     HttpServiceOptions,
     HTTPMatcherCheck,
+    HTTPNormalizedResponse,
+    HTTPResponse,
 } from "./types";
 
 /**
@@ -41,6 +40,8 @@ export function HTTPMatcher(matcher: HTTPMatcherCheck) {
     };
 }
 
+export type CORS = (request: HTTPNormalizedRequest) => HTTPCORSOptions | undefined;
+
 /**
  * @class_decorator
  * @method_decorator
@@ -61,6 +62,8 @@ export function CORS(options: HTTPCORSOptions) {
 }
 
 // - handlers
+
+export type Handler = (request: HTTPNormalizedRequest) => HTTPNormalizedResponse;
 
 /**
  * @method_decorator
@@ -131,39 +134,35 @@ export function Headers<H extends Headers>(
 
 // -- Parsers
 
+export type Parser = (request: HTTPNormalizedRequest) => Partial<HTTPNormalizedRequest> | void;
+
+export type Receive = Parser;
+
 /**
- * Parses the request initially
+ * Parses the request initially.
  * @method_decorator
  */
-export function Receive<R extends HTTPRequestParser>(
-    target: ServicePrototype,
-    propertyKey: string,
-    descriptor: PropertyDescriptor
-) {
+export function Receive(target: ServicePrototype, propertyKey: string, descriptor: PropertyDescriptor) {
+    Shadow.addMethod(target, HTTP_FIELD.REQUEST_RECEIVE, propertyKey);
+}
+
+export type Middleware = Parser;
+
+/**
+ * Transforms the request.
+ * @method_decorator
+ */
+export function Middleware(target: ServicePrototype, propertyKey: string, descriptor: PropertyDescriptor) {
     Shadow.addMethod(target, HTTP_FIELD.REQUEST_PARSER, propertyKey);
 }
 
-/**
- * Parses the request before handling it
- * @method_decorator
- */
-export function Middleware<R extends HTTPRequestParser>(
-    target: ServicePrototype,
-    propertyKey: string,
-    descriptor: PropertyDescriptor
-) {
-    return Receive(target, propertyKey, descriptor);
-}
+export type BodyParser = (request: HTTPNormalizedRequest) => any;
 
 /**
- * **Be careful! The decorated method will be modified and will return `Promise<HTTPNormalizedRequest>`.**
+ * **Be careful! The decorated method will be modified and will return a `HTTPNormalizedRequest`**.
  * @method_decorator
  */
-export function BodyParser<H extends Headers>(
-    target: ServicePrototype,
-    propertyKey: string,
-    descriptor: PropertyDescriptor
-) {
+export function BodyParser(target: ServicePrototype, propertyKey: string, descriptor: PropertyDescriptor) {
     Shadow.addMethod(target, HTTP_FIELD.REQUEST_PARSER, propertyKey);
     const originalMethod = descriptor.value;
     descriptor.value = async function (request: HTTPNormalizedRequest) {
@@ -173,15 +172,15 @@ export function BodyParser<H extends Headers>(
     };
 }
 
+export type CookieParser = (
+    request: HTTPNormalizedRequest
+) => Record<string, string> | Promise<Record<string, string>>;
+
 /**
- * **Be careful! the decorated method will be modified and will return `Promise<HTTPNormalizedRequest>`.**
+ * **Be careful! the decorated method will be modified and will return a `HTTPNormalizedRequest`**.
  * @method_decorator
  */
-export function CookieParser<H extends Record<string, string>>(
-    target: ServicePrototype,
-    propertyKey: string,
-    descriptor: PropertyDescriptor
-) {
+export function CookieParser(target: ServicePrototype, propertyKey: string, descriptor: PropertyDescriptor) {
     Shadow.addMethod(target, HTTP_FIELD.REQUEST_PARSER, propertyKey);
     const originalMethod = descriptor.value;
     descriptor.value = async function (request: HTTPNormalizedRequest) {
@@ -190,15 +189,13 @@ export function CookieParser<H extends Record<string, string>>(
     };
 }
 
+export type SearchParser = (request: HTTPNormalizedRequest) => URLSearchParams | Promise<URLSearchParams>;
+
 /**
- * **Be careful! The decorated method will be modified and will return `Promise<HTTPNormalizedRequest>`.**
+ * **Be careful! The decorated method will be modified and will return a `HTTPNormalizedRequest`**.
  * @method_decorator
  */
-export function SearchParser<H extends URLSearchParams>(
-    target: ServicePrototype,
-    propertyKey: string,
-    descriptor: PropertyDescriptor
-) {
+export function SearchParser(target: ServicePrototype, propertyKey: string, descriptor: PropertyDescriptor) {
     Shadow.addMethod(target, HTTP_FIELD.REQUEST_PARSER, propertyKey);
     const originalMethod = descriptor.value;
     descriptor.value = async function (request: HTTPNormalizedRequest) {
@@ -207,15 +204,13 @@ export function SearchParser<H extends URLSearchParams>(
     };
 }
 
+export type HeadersParser = (request: HTTPNormalizedRequest) => Headers | Promise<Headers>;
+
 /**
- * **Be careful! The decorated method will be modified and will return `Promise<HTTPNormalizedRequest>`.**
+ * **Be careful! The decorated method will be modified and will return a `HTTPNormalizedRequest`**.
  * @method_decorator
  */
-export function HeadersParser<H extends Headers>(
-    target: ServicePrototype,
-    propertyKey: string,
-    descriptor: PropertyDescriptor
-) {
+export function HeadersParser(target: ServicePrototype, propertyKey: string, descriptor: PropertyDescriptor) {
     Shadow.addMethod(target, HTTP_FIELD.REQUEST_PARSER, propertyKey);
     const originalMethod = descriptor.value;
     descriptor.value = async function (request: HTTPNormalizedRequest) {
@@ -224,11 +219,15 @@ export function HeadersParser<H extends Headers>(
     };
 }
 
+export type ContextProvider = (
+    request: HTTPNormalizedRequest
+) => HTTPRequestContext | Promise<HTTPRequestContext>;
+
 /**
- * **Be careful! The decorated method will be modified and will return `Promise<HTTPNormalizedRequest>`.**
+ * **Be careful! The decorated method will be modified and will return a `HTTPNormalizedRequest`**.
  * @method_decorator
  */
-export function ContextProvider<C extends HTTPRequestContext>(
+export function ContextProvider(
     target: ServicePrototype,
     propertyKey: string,
     descriptor: PropertyDescriptor
@@ -241,13 +240,15 @@ export function ContextProvider<C extends HTTPRequestContext>(
     };
 }
 
+export type SessionProvider = (request: HTTPNormalizedRequest) => HTTPSession | Promise<HTTPSession>;
+
 /**
- * The decorated method should throw an Error on failure.
+ * The decorated method should throw an Error if any authentication fails.
  *
- * **Be careful, the decorated method will be modified and will return `HTTPNormalizedRequest`**
+ * **Be careful, the decorated method will be modified and will return a `HTTPNormalizedRequest`**.
  * @method_decorator
  */
-export function Authenticate<S extends HTTPSession>(
+export function SessionProvider(
     target: ServicePrototype,
     propertyKey: string,
     descriptor: PropertyDescriptor
@@ -262,11 +263,16 @@ export function Authenticate<S extends HTTPSession>(
 
 // -- Refine
 
+export type Refine = (
+    request: HTTPNormalizedRequest,
+    response: HTTPNormalizedResponse
+) => HTTPNormalizedResponse;
+
 /**
  * Refines a response before sending it
  * @method_decorator
  */
-export function Refine<R extends HTTPResponseRefiner>(
+export function Refine<R extends Refine>(
     target: ServicePrototype,
     propertyKey: string,
     descriptor: PropertyDescriptor
@@ -276,14 +282,15 @@ export function Refine<R extends HTTPResponseRefiner>(
 
 // -- Send
 
+export type Send = (
+    request: HTTPNormalizedRequest,
+    response: HTTPNormalizedResponse
+) => HTTPResponse | Promise<HTTPResponse>;
+
 /**
  * Refines a response before sending it
  * @method_decorator
  */
-export function Send<R extends HTTPSender>(
-    target: ServicePrototype,
-    propertyKey: string,
-    descriptor: PropertyDescriptor
-) {
+export function Send(target: ServicePrototype, propertyKey: string, descriptor: PropertyDescriptor) {
     Shadow.addMethod(target, HTTP_FIELD.SENDER, propertyKey);
 }
