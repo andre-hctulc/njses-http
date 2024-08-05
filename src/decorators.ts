@@ -18,7 +18,7 @@ import type {
 export function HTTP(options: HttpServiceOptions = {}) {
     return function (service: ServiceCtr) {
         Shadow.update(service, (shadow) => {
-            shadow.http_options = options;
+            shadow.$http_options = options;
         });
         return Role(HTTP_ROLE.SERVICE)(service);
     };
@@ -32,10 +32,10 @@ export function HTTP(options: HttpServiceOptions = {}) {
 export function HTTPMatcher(matcher: HTTPMatcherCheck) {
     return function (service: any, propertyKey?: string, descriptor?: PropertyDescriptor) {
         if (descriptor) {
-            Shadow.addField(service, propertyKey as string, { http_matcher: matcher });
+            Shadow.addField(service, propertyKey as string, { $http_matcher: matcher });
         } else
             Shadow.update(service, (shadow) => {
-                shadow.http_matcher = matcher;
+                shadow.$http_matcher = matcher;
             });
     };
 }
@@ -55,7 +55,7 @@ export function CORS(options: HTTPCORSOptions) {
         // CORS Class based
         else {
             Shadow.update(target, (shadow) => {
-                shadow.http_cors = options;
+                shadow.$http_cors = options;
             });
         }
     };
@@ -70,7 +70,7 @@ export type Handler = (request: HTTPNormalizedRequest) => HTTPNormalizedResponse
  */
 export function Handler(httpMethod: string = "GET", path: string = "") {
     return function (service: ServicePrototype, propertyKey: string, descriptor: PropertyDescriptor) {
-        Shadow.addField(service, propertyKey, { http_method: httpMethod, http_path: path, method: true });
+        Shadow.addField(service, propertyKey, { $http_method: httpMethod, $http_path: path, method: true });
     };
 }
 
@@ -100,7 +100,7 @@ export const DELETE = (path: string = "") => Handler("DELETE", path);
  * @param_decorator
  */
 export function Body<B>(target: ServicePrototype, propertyKey: string | symbol, parameterIndex: number) {
-    Shadow.addParam(target, propertyKey, parameterIndex, { http_param_type: "body" });
+    Shadow.addParam(target, propertyKey, parameterIndex, {$http_param_type: "body" });
 }
 
 /**
@@ -111,14 +111,14 @@ export function Search<S extends URLSearchParams>(
     propertyKey: string | symbol,
     parameterIndex: number
 ) {
-    Shadow.addParam(target, propertyKey, parameterIndex, { http_param_type: "search_params" });
+    Shadow.addParam(target, propertyKey, parameterIndex, { $http_param_type: "search_params" });
 }
 
 /**
  * @param_decorator
  */
 export function Request<R>(target: ServicePrototype, propertyKey: string | symbol, parameterIndex: number) {
-    Shadow.addParam(target, propertyKey, parameterIndex, { http_param_type: "req" });
+    Shadow.addParam(target, propertyKey, parameterIndex, { $http_param_type: "req" });
 }
 
 /**
@@ -129,7 +129,7 @@ export function Headers<H extends Headers>(
     propertyKey: string | symbol,
     parameterIndex: number
 ) {
-    Shadow.addParam(target, propertyKey, parameterIndex, { http_param_type: "headers" });
+    Shadow.addParam(target, propertyKey, parameterIndex, { $http_param_type: "headers" });
 }
 
 // -- Parsers

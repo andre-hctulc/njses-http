@@ -1,4 +1,4 @@
-import { Init, Module, ServiceInstance, Registery, Mount } from "../../njses";
+import { Init, Module, ServiceInstance, Services, Mount } from "../../njses";
 import { Shadow, ParamShadow, FieldShadow } from "../../njses/src/shadow";
 import { HTTP_FIELD, HTTP_ROLE } from "./const";
 import type { Handler, Parser, Refine, Send } from "./decorators";
@@ -25,7 +25,7 @@ export class HTTPModule {
 
     private _getSender(): { service: ServiceInstance; method: string } | null {
         if (this._sender) return this._sender;
-        for (const service of Registery.getAssignees(HTTP_ROLE.SERVICE)) {
+        for (const service of Services.getAssignees(HTTP_ROLE.SERVICE)) {
             const m = Shadow.getMethod(service, HTTP_FIELD.SENDER);
             if (m) return (this._sender = { service, method: m });
         }
@@ -33,14 +33,14 @@ export class HTTPModule {
     }
 
     getAssignees(path: string): AssigneeCacheEntry[] {
-        return Registery.getAssignees(HTTP_ROLE.SERVICE)
+        return Services.getAssignees(HTTP_ROLE.SERVICE)
             .map((service) => {
                 const shadow = Shadow.get(service, true);
                 if (!shadow) throw new Error("Service shadow not found");
                 return {
                     service,
-                    matcher: shadow.http_matcher || null,
-                    priotity: shadow.http_options?.priority,
+                    matcher: shadow.$http_matcher || null,
+                    priotity: shadow.$http_options?.priority,
                 };
             })
             .sort((a, b) => {
@@ -92,7 +92,7 @@ export class HTTPModule {
         let path: string | undefined;
         const usedAssignees: AssigneeCacheEntry[] = [];
 
-        for (const assignee of Registery.getAssignees(HTTP_ROLE.SERVICE)) {
+        for (const assignee of Services.getAssignees(HTTP_ROLE.SERVICE)) {
             // continue if path does not match and not initialized
             if (path != null && !this.matches(path, assignee.matcher)) continue;
 
@@ -108,9 +108,9 @@ export class HTTPModule {
                 const p = Shadow.getField(assignee, method);
 
                 // continue if path does not match
-                if (path != null && !this.matches(normalizedRequest.path, p?.http_matcher)) continue;
+                if (path != null && !this.matches(normalizedRequest.path, p?.$http_matcher)) continue;
 
-                const newReq = Registery.invoke<Parser>(assignee.service, method, [normalizedRequest]);
+                const newReq = Services.invoke<Parser>(assignee.service, method, normalizedRequest);
                 if (newReq) {
                     // set path, when first set
                     // BUG this could include services where the matcher does not match. For now ew can use priotity to sort them
@@ -125,7 +125,10 @@ export class HTTPModule {
         let handlerProp: FieldShadow | undefined;
 
         for (const prop of Shadow.getFields(handlerService)) {
-            if (prop.http_method === normalizedRequest.method && prop.http_path === normalizedRequest.path) {
+            if (
+                prop.$http_method === normalizedRequest.method &&
+                prop.$http_path === normalizedRequest.path
+            ) {
                 handlerProp = prop;
                 break;
             }
@@ -136,7 +139,7 @@ export class HTTPModule {
                 `No handler found for request "${normalizedRequest.method} ${normalizedRequest.path}"`
             );
 
-        let normalizedResponse = await Registery.invoke<Handler>(
+        let normalizedResponse = await Services.invoke<Handler>(
             handlerService,
             handlerProp.field as string,
             // Set injecte arguments, such as @Body, @Search, @Headers, @Context, @Session
@@ -144,8 +147,8 @@ export class HTTPModule {
                 handlerService,
                 handlerProp.field,
                 [normalizedRequest],
-                (arg, param) => this._getParam(normalizedRequest, param?.http_param_type) || arg
-            )
+                (arg, param) => this._getParam(normalizedRequest, param?.$http_param_type) || arg
+            )[0]
         );
 
         // -- refine response
@@ -153,12 +156,14 @@ export class HTTPModule {
         for (const httpService of usedAssignees) {
             for (const ref of Shadow.getMethods(httpService.service, HTTP_FIELD.RESPONSE_REFINER)) {
                 const p = Shadow.getField(httpService, ref);
-                if (!this.matches(normalizedRequest.path, p?.http_matcher)) continue;
+                if (!this.matches(normalizedRequest.path, p?.$http_matcher)) continue;
 
-                normalizedResponse = await Registery.invoke<Refine>(httpService.service, ref, [
+                normalizedResponse = await Services.invoke<Refine>(
+                    httpService.service,
+                    ref,
                     normalizedRequest,
-                    normalizedResponse,
-                ]);
+                    normalizedResponse
+                );
             }
         }
 
@@ -191,10 +196,10 @@ export class HTTPModule {
 
     async send(request: HTTPNormalizedRequest, response: HTTPNormalizedResponse) {
         if (!this._sender) throw new Error("No sender found");
-        return await Registery.invoke<Send>(this._sender.service, this._sender.method, [request, response]);
+        return await Services.invoke<Send>(this._sender.service, this._sender.method, request, response);
     }
 
-    private _getParam(request: HTTPNormalizedRequest, type: ParamShadow["http_param_type"]) {
+    private _getParam(request: HTTPNormalizedRequest, type: ParamShadow["$http_param_type"]) {
         switch (type) {
             case "body":
                 return request.body;
@@ -232,18 +237,17 @@ export class HTTPModule {
 
         for (const httpService of httpServices) {
             const shadow = Shadow.get(httpService.service, true);
-            if (shadow.http_cors) cors = mergeCors(cors || {}, shadow.http_cors);
+            if (shadow.$http_cors) cors = mergeCors(cors || {}, shadow.$http_cors);
 
             for (const corsField of Shadow.getProps(httpService.service, HTTP_FIELD.CORS)) {
                 const field = Shadow.getField(httpService, corsField);
 
                 // apply matcher
-                if (!this.matches(request.path, field?.http_matcher)) continue;
+                if (!this.matches(request.path, field?.$http_matcher)) continue;
 
                 cors = mergeCors(
                     cors || {},
-                    (await Registery.resolve<HTTPCORSOptions>(httpService.service, corsField, [request])) ||
-                        {}
+                    (await Services.resolve<HTTPCORSOptions>(httpService.service, corsField, request)) || {}
                 );
             }
         }
