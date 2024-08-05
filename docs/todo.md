@@ -1,1 +1,2 @@
 -   error transformers Error -> HTTPError
+-   Add support for repo endpoints
