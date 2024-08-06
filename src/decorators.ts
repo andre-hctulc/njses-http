@@ -1,4 +1,4 @@
-import { Role, ServiceCtr, ServicePrototype, Shadow } from "../../njses";
+import { Role, ServiceCtr, Shadow } from "../../njses";
 import { HTTP_FIELD, HTTP_ROLE } from "./const";
 import type {
     HTTPCORSOptions,
@@ -17,9 +17,7 @@ import type {
  */
 export function HTTP(options: HttpServiceOptions = {}) {
     return function (service: ServiceCtr) {
-        Shadow.update(service, (shadow) => {
-            shadow.$http_options = options;
-        });
+        Shadow.get(service)?.setCtx("$http_options", options);
         return Role(HTTP_ROLE.SERVICE)(service);
     };
 }
@@ -30,13 +28,13 @@ export function HTTP(options: HttpServiceOptions = {}) {
  * @method_decorator
  */
 export function HTTPMatcher(matcher: HTTPMatcherCheck) {
-    return function (service: any, propertyKey?: string, descriptor?: PropertyDescriptor) {
+    return function (target: any, propertyKey?: string, descriptor?: PropertyDescriptor) {
+        const shadow = Shadow.require(target);
         if (descriptor) {
-            Shadow.addField(service, propertyKey as string, { $http_matcher: matcher });
-        } else
-            Shadow.update(service, (shadow) => {
-                shadow.$http_matcher = matcher;
-            });
+            shadow.addField(propertyKey as string, { $http_matcher: matcher });
+        } else {
+            shadow.setCtx("$http_matcher", matcher);
+        }
     };
 }
 
@@ -48,15 +46,14 @@ export type CORS = (request: HTTPNormalizedRequest) => HTTPCORSOptions | undefin
  */
 export function CORS(options: HTTPCORSOptions) {
     return function (target: any, propertyKey?: string | symbol, descriptor?: PropertyDescriptor) {
+        const shadow = Shadow.require(target);
         // CORS Handler based
         if (propertyKey) {
-            Shadow.addProp(target, HTTP_FIELD.CORS, propertyKey);
+            shadow.addProp(HTTP_FIELD.CORS, propertyKey);
         }
         // CORS Class based
         else {
-            Shadow.update(target, (shadow) => {
-                shadow.$http_cors = options;
-            });
+            shadow.setCtx("$http_cors", options);
         }
     };
 }
@@ -69,8 +66,12 @@ export type Handler = (request: HTTPNormalizedRequest) => HTTPNormalizedResponse
  * @method_decorator
  */
 export function Handler(httpMethod: string = "GET", path: string = "") {
-    return function (service: ServicePrototype, propertyKey: string, descriptor: PropertyDescriptor) {
-        Shadow.addField(service, propertyKey, { $http_method: httpMethod, $http_path: path, method: true });
+    return function (target: any, propertyKey: string, descriptor: PropertyDescriptor) {
+        Shadow.require(target).addField(propertyKey, {
+            $http_method: httpMethod,
+            $http_path: path,
+            method: true,
+        });
     };
 }
 
@@ -99,37 +100,37 @@ export const DELETE = (path: string = "") => Handler("DELETE", path);
 /**
  * @param_decorator
  */
-export function Body<B>(target: ServicePrototype, propertyKey: string | symbol, parameterIndex: number) {
-    Shadow.addParam(target, propertyKey, parameterIndex, {$http_param_type: "body" });
+export function Body<B>(target: any, propertyKey: string | symbol, parameterIndex: number) {
+    Shadow.require(target).addParam(propertyKey, parameterIndex, { $http_param_type: "body" });
 }
 
 /**
  * @param_decorator
  */
 export function Search<S extends URLSearchParams>(
-    target: ServicePrototype,
+    target: any,
     propertyKey: string | symbol,
     parameterIndex: number
 ) {
-    Shadow.addParam(target, propertyKey, parameterIndex, { $http_param_type: "search_params" });
+    Shadow.require(target).addParam(propertyKey, parameterIndex, { $http_param_type: "search_params" });
 }
 
 /**
  * @param_decorator
  */
-export function Request<R>(target: ServicePrototype, propertyKey: string | symbol, parameterIndex: number) {
-    Shadow.addParam(target, propertyKey, parameterIndex, { $http_param_type: "req" });
+export function Request<R>(target: any, propertyKey: string | symbol, parameterIndex: number) {
+    Shadow.require(target).addParam(propertyKey, parameterIndex, { $http_param_type: "req" });
 }
 
 /**
  * @param_decorator
  */
 export function Headers<H extends Headers>(
-    target: ServicePrototype,
+    target: any,
     propertyKey: string | symbol,
     parameterIndex: number
 ) {
-    Shadow.addParam(target, propertyKey, parameterIndex, { $http_param_type: "headers" });
+    Shadow.require(target).addParam(propertyKey, parameterIndex, { $http_param_type: "headers" });
 }
 
 // -- Parsers
@@ -142,8 +143,8 @@ export type Receive = Parser;
  * Parses the request initially.
  * @method_decorator
  */
-export function Receive(target: ServicePrototype, propertyKey: string, descriptor: PropertyDescriptor) {
-    Shadow.addMethod(target, HTTP_FIELD.REQUEST_RECEIVE, propertyKey);
+export function Receive(target: any, propertyKey: string, descriptor: PropertyDescriptor) {
+    Shadow.require(target).addMethod(HTTP_FIELD.REQUEST_RECEIVE, propertyKey);
 }
 
 export type Middleware = Parser;
@@ -152,8 +153,8 @@ export type Middleware = Parser;
  * Transforms the request.
  * @method_decorator
  */
-export function Middleware(target: ServicePrototype, propertyKey: string, descriptor: PropertyDescriptor) {
-    Shadow.addMethod(target, HTTP_FIELD.REQUEST_PARSER, propertyKey);
+export function Middleware(target: any, propertyKey: string, descriptor: PropertyDescriptor) {
+    Shadow.require(target).addMethod(HTTP_FIELD.REQUEST_PARSER, propertyKey);
 }
 
 export type BodyParser = (request: HTTPNormalizedRequest) => any;
@@ -162,8 +163,8 @@ export type BodyParser = (request: HTTPNormalizedRequest) => any;
  * **Be careful! The decorated method will be modified and will return a `HTTPNormalizedRequest`**.
  * @method_decorator
  */
-export function BodyParser(target: ServicePrototype, propertyKey: string, descriptor: PropertyDescriptor) {
-    Shadow.addMethod(target, HTTP_FIELD.REQUEST_PARSER, propertyKey);
+export function BodyParser(target: any, propertyKey: string, descriptor: PropertyDescriptor) {
+    Shadow.require(target).addMethod(HTTP_FIELD.REQUEST_PARSER, propertyKey);
     const originalMethod = descriptor.value;
     descriptor.value = async function (request: HTTPNormalizedRequest) {
         const body = await originalMethod.apply(this, [request]);
@@ -180,8 +181,8 @@ export type CookieParser = (
  * **Be careful! the decorated method will be modified and will return a `HTTPNormalizedRequest`**.
  * @method_decorator
  */
-export function CookieParser(target: ServicePrototype, propertyKey: string, descriptor: PropertyDescriptor) {
-    Shadow.addMethod(target, HTTP_FIELD.REQUEST_PARSER, propertyKey);
+export function CookieParser(target: any, propertyKey: string, descriptor: PropertyDescriptor) {
+    Shadow.require(target).addMethod(HTTP_FIELD.REQUEST_PARSER, propertyKey);
     const originalMethod = descriptor.value;
     descriptor.value = async function (request: HTTPNormalizedRequest) {
         const cookies = await originalMethod.apply(this, [request]);
@@ -195,8 +196,8 @@ export type SearchParser = (request: HTTPNormalizedRequest) => URLSearchParams |
  * **Be careful! The decorated method will be modified and will return a `HTTPNormalizedRequest`**.
  * @method_decorator
  */
-export function SearchParser(target: ServicePrototype, propertyKey: string, descriptor: PropertyDescriptor) {
-    Shadow.addMethod(target, HTTP_FIELD.REQUEST_PARSER, propertyKey);
+export function SearchParser(target: any, propertyKey: string, descriptor: PropertyDescriptor) {
+    Shadow.require(target).addMethod(HTTP_FIELD.REQUEST_PARSER, propertyKey);
     const originalMethod = descriptor.value;
     descriptor.value = async function (request: HTTPNormalizedRequest) {
         const search = await originalMethod.apply(this, [request]);
@@ -210,8 +211,8 @@ export type HeadersParser = (request: HTTPNormalizedRequest) => Headers | Promis
  * **Be careful! The decorated method will be modified and will return a `HTTPNormalizedRequest`**.
  * @method_decorator
  */
-export function HeadersParser(target: ServicePrototype, propertyKey: string, descriptor: PropertyDescriptor) {
-    Shadow.addMethod(target, HTTP_FIELD.REQUEST_PARSER, propertyKey);
+export function HeadersParser(target: any, propertyKey: string, descriptor: PropertyDescriptor) {
+    Shadow.require(target).addMethod(HTTP_FIELD.REQUEST_PARSER, propertyKey);
     const originalMethod = descriptor.value;
     descriptor.value = async function (request: HTTPNormalizedRequest) {
         const headers = await originalMethod.apply(this, [request]);
@@ -227,12 +228,8 @@ export type ContextProvider = (
  * **Be careful! The decorated method will be modified and will return a `HTTPNormalizedRequest`**.
  * @method_decorator
  */
-export function ContextProvider(
-    target: ServicePrototype,
-    propertyKey: string,
-    descriptor: PropertyDescriptor
-) {
-    Shadow.addMethod(target, HTTP_FIELD.REQUEST_PARSER, propertyKey);
+export function ContextProvider(target: any, propertyKey: string, descriptor: PropertyDescriptor) {
+    Shadow.require(target).addMethod(HTTP_FIELD.REQUEST_PARSER, propertyKey);
     const originalMethod = descriptor.value;
     descriptor.value = async function (request: HTTPNormalizedRequest) {
         const context = await originalMethod.apply(this, [request]);
@@ -248,12 +245,8 @@ export type SessionProvider = (request: HTTPNormalizedRequest) => HTTPSession | 
  * **Be careful, the decorated method will be modified and will return a `HTTPNormalizedRequest`**.
  * @method_decorator
  */
-export function SessionProvider(
-    target: ServicePrototype,
-    propertyKey: string,
-    descriptor: PropertyDescriptor
-) {
-    Shadow.addMethod(target, HTTP_FIELD.REQUEST_PARSER, propertyKey);
+export function SessionProvider(target: any, propertyKey: string, descriptor: PropertyDescriptor) {
+    Shadow.require(target).addMethod(HTTP_FIELD.REQUEST_PARSER, propertyKey);
     const originalMethod = descriptor.value;
     descriptor.value = async function (request: HTTPNormalizedRequest) {
         const session = await originalMethod.apply(this, [request]);
@@ -272,12 +265,8 @@ export type Refine = (
  * Refines a response before sending it
  * @method_decorator
  */
-export function Refine<R extends Refine>(
-    target: ServicePrototype,
-    propertyKey: string,
-    descriptor: PropertyDescriptor
-) {
-    Shadow.addMethod(target, HTTP_FIELD.RESPONSE_REFINER, propertyKey);
+export function Refine<R extends Refine>(target: any, propertyKey: string, descriptor: PropertyDescriptor) {
+    Shadow.require(target).addMethod(HTTP_FIELD.RESPONSE_REFINER, propertyKey);
 }
 
 // -- Send
@@ -291,6 +280,6 @@ export type Send = (
  * Refines a response before sending it
  * @method_decorator
  */
-export function Send(target: ServicePrototype, propertyKey: string, descriptor: PropertyDescriptor) {
-    Shadow.addMethod(target, HTTP_FIELD.SENDER, propertyKey);
+export function Send(target: any, propertyKey: string, descriptor: PropertyDescriptor) {
+    Shadow.require(target).addMethod(HTTP_FIELD.SENDER, propertyKey);
 }

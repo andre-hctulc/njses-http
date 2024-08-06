@@ -2,7 +2,7 @@
 Extend NJSES `ServiceShadow` with Lambda specific fields 
 */
 declare module "../../njses" {
-    interface CustomShadow {
+    interface CustomShadowContext {
         http_cors: HTTPCORSOptions;
         http_options: HttpServiceOptions;
         http_matcher: HTTPMatcherCheck;
